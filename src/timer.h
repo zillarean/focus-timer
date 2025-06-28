@@ -8,6 +8,7 @@ extern "C"{
 #include <stdbool.h>
 
 typedef struct {
+    char name[64];
     int hours;
     int minutes;
     int seconds;

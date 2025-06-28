@@ -8,7 +8,8 @@
 
 @set SOURCES=src\main.cpp src\timer.c thirdparty\imGui\backends\imgui_impl_dx11.cpp thirdparty\imGui\backends\imgui_impl_win32.cpp thirdparty\imGui\imgui*.cpp
 
-@set LIBS=/link /LIBPATH:"%DXSDK_DIR%\Lib\x86" d3d11.lib d3dcompiler.lib
+rem @set LIBS=/link /LIBPATH:"%DXSDK_DIR%\Lib\x86" d3d11.lib d3dcompiler.lib
+@@set LIBS=/link /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup /LIBPATH:"\Lib\x86" d3d11.lib d3dcompiler.lib
 
 mkdir %OUT_DIR%
 

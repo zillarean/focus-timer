@@ -1,19 +1,21 @@
-// Dear ImGui: standalone example application for DirectX 11
-
-// Learn about Dear ImGui:
-// - FAQ                  https://dearimgui.com/faq
-// - Getting Started      https://dearimgui.com/getting-started
-// - Documentation        https://dearimgui.com/docs (same as your local docs/ folder).
-// - Introduction, links and more at the top of imgui.cpp
-
+//TODO: Delete app
+//TODO: Total time
+//TODO: App icons
+//TODO: App filtering
 #include "../thirdparty/imGui/imgui.h"
 #include "../thirdparty/imGui/backends/imgui_impl_win32.h"
 #include "../thirdparty/imGui/backends/imgui_impl_dx11.h"
 #include <d3d11.h>
 #include <sysinfoapi.h>
 #include <tchar.h>
+#include <cstdio>
+#include <vector>
+#include <iostream>
 #include <stdint.h>
+#include <string.h>
+#include <string>
 #include <windows.h>
+#include <winuser.h>
 #include "timer.h"
 
 // Data
@@ -24,12 +26,66 @@ static bool                     g_SwapChainOccluded = false;
 static UINT                     g_ResizeWidth = 0, g_ResizeHeight = 0;
 static ID3D11RenderTargetView*  g_mainRenderTargetView = nullptr;
 
+const static int MAX_TIMERS = 64;
+
 // Forward declarations of helper functions
 bool CreateDeviceD3D(HWND hWnd);
 void CleanupDeviceD3D();
 void CreateRenderTarget();
 void CleanupRenderTarget();
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+struct WindowInfo {
+    HWND hwnd;
+    std::string title;
+};
+
+std::vector<WindowInfo> app_list;
+
+BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
+    if (!IsWindowVisible(hwnd))
+        return TRUE;
+
+    char title[256];
+    GetWindowTextA(hwnd, title, sizeof(title));
+
+    if (strlen(title) > 0) {
+        app_list.push_back({ hwnd, title });
+    }
+
+    return TRUE;
+}
+
+void FindAllTopLevelWindows() {
+    app_list.clear();
+    EnumWindows(EnumWindowsProc, 0);
+}
+
+
+
+int set_active_timer(char *name, Timer timers[], int timers_count){
+    for (int i = 0; i < timers_count; i++){
+        if (strcmp(timers[i].name, name) == 0){
+            timers[i].paused = false;
+            return i;
+        }
+        else{
+            timers[i].paused = true;
+        }
+    }
+    return 0;
+}
+
+Timer add_timer(const char *name){
+
+    Timer timer = {};
+    timer.hours = 0;
+    timer.minutes = 0;
+    timer.seconds = 0;
+    timer.paused = true;
+    strncpy_s (timer.name, sizeof(timer.name), name, _TRUNCATE);
+    return timer;
+}
 
 // Main code
 int main(int, char**)
@@ -73,28 +129,6 @@ int main(int, char**)
         nullptr, nullptr, wc.hInstance, nullptr);
 
 
-
-
-   /*
-    // Make process DPI aware and obtain main monitor scale
-    ImGui_ImplWin32_EnableDpiAwareness();
-    float main_scale = ImGui_ImplWin32_GetDpiScaleForMonitor(::MonitorFromPoint(POINT{ 0, 0 }, MONITOR_DEFAULTTOPRIMARY));
-
-    // Create application window
-    WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"timer", nullptr };
-    ::RegisterClassExW(&wc);
-
-    int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-    int screenHeight = GetSystemMetrics(SM_CYSCREEN);
-    int windowWidth = (int)(600 * main_scale);
-    int windowHeight = (int)(300 * main_scale);
-
-    int windowX = (screenWidth - windowWidth) / 2;
-    int windowY = (screenHeight - windowHeight) / 2;
-
-
-    HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"Focus Timer", WS_OVERLAPPEDWINDOW, windowX, windowY, screenWidth, screenHeight, nullptr, nullptr, wc.hInstance, nullptr);
-    */
     // Initialize Direct3D
     if (!CreateDeviceD3D(hwnd))
     {
@@ -111,8 +145,6 @@ int main(int, char**)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
@@ -121,40 +153,34 @@ int main(int, char**)
     // Setup scaling
     ImGuiStyle& style = ImGui::GetStyle();
     style.ScaleAllSizes(main_scale);        // Bake a fixed style scale. (until we have a solution for dynamic style scaling, changing this requires resetting Style + calling this again)
-    style.FontScaleDpi = main_scale;        // Set initial font scale. (using io.ConfigDpiScaleFonts=true makes this unnecessary. We leave both here for documentation purpose)
 
     // Setup Platform/Renderer backends
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 
-    // Load Fonts
-    // - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
-    // - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the font among multiple.
-    // - If the file cannot be loaded, the function will return a nullptr. Please handle those errors in your application (e.g. use an assertion, or display an error and quit).
-    // - Use '#define IMGUI_ENABLE_FREETYPE' in your imconfig file to use Freetype for higher quality font rendering.
-    // - Read 'docs/FONTS.md' for more instructions and details.
-    // - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
-    //style.FontSizeBase = 20.0f;
-    //io.Fonts->AddFontDefault();
-    //io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf");
-    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf");
-    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf");
-    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf");
-    //ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf");
-    //IM_ASSERT(font != nullptr);
 
-    // Our state
+    //State
     ImVec4 clear_color = ImVec4(0.20f, 0.20f, 0.18f, 1.00f);
-    Timer timer = {
-    .hours = 0,
-    .minutes = 0,
-    .seconds = 0,
-    .paused = false,
-};
+    static bool selection_mode = false;
+    static HWND main_hwnd = hwnd;
+    HWND selected_window;
+    static bool waiting_for_click = false;
+    int timers_count = 0;
+    int active_timer_id = 0;
+    char name[64] = "";
+    char is_equal[4] = "Yes";
+    char not_equal[3] = "No";
+    char focused_window_title[64];
+    Timer timers[MAX_TIMERS];
+//     Timer timer = {
+//     .hours = 0,
+//     .minutes = 0,
+//     .seconds = 0,
+//     .paused = false,
+// };
     uint64_t last_time = GetTickCount64();
     int elapsed_seconds = 0;
     static uint64_t leftover_ms = 0;
-    // Main loop
     bool done = false;
     while (!done)
     {
@@ -193,12 +219,14 @@ int main(int, char**)
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
-
-        // 1. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
         {
             static float f = 0.0f;
             static int counter = 0;
-
+            HWND focused_window = GetForegroundWindow();
+            if (focused_window != nullptr) {
+                GetWindowTextA(focused_window, focused_window_title, sizeof(focused_window_title));
+                active_timer_id = set_active_timer(focused_window_title, timers, timers_count);
+            }
             uint64_t now = GetTickCount64();
             uint64_t delta_ms = now - last_time;
             last_time = now;
@@ -210,10 +238,16 @@ int main(int, char**)
                 add_seconds++;
                 leftover_ms -= 1000;
             }
-            if (add_seconds > 0)
-            {
-                timer_update(&timer, add_seconds);
+            for (int i = 0; i < timers_count; i++){
+
             }
+            if (add_seconds > 0){
+                if (strcmp(timers[active_timer_id].name, focused_window_title) == 0){
+                    timer_update(&timers[active_timer_id], add_seconds);
+                }
+            }
+
+
             ImGui::SetNextWindowPos(ImVec2(0, 0));
             ImGui::SetNextWindowSize(io.DisplaySize); // fill entire main viewport
 
@@ -223,7 +257,42 @@ int main(int, char**)
                 ImGuiWindowFlags_NoCollapse |
                 ImGuiWindowFlags_NoTitleBar);
 
-            ImGui::Text("%02d:%02d:%02d", timer.hours, timer.minutes, timer.seconds);
+            // ImGui::InputText("Selected name", name, IM_ARRAYSIZE(name));
+            // ImGui::InputText("Focused name", focused_window_title, IM_ARRAYSIZE(focused_window_title));
+            // if (strcmp(focused_window_title, name) == 0){
+            //     ImGui::Text("%s", is_equal);
+            // }
+            // else{
+            //     ImGui::Text("%s", not_equal);
+            // }
+
+            if (ImGui::Button("Add app to track")){
+                selection_mode = true;
+            }
+
+            if (selection_mode){
+                FindAllTopLevelWindows();
+                for (size_t i = 0; i < app_list.size(); ++i) {
+                    WindowInfo win = app_list[i];
+                    if (ImGui::Button(win.title.c_str())){
+                            selected_window = win.hwnd;
+                            strncpy_s (name, sizeof(name), win.title.c_str(), _TRUNCATE);
+                            timers[timers_count++] = add_timer(name);
+                            selection_mode = false;
+                        }
+                }
+                // selection_mode = false;
+            }
+
+            for (int i = 0; i < timers_count; i++){
+                Timer timer = timers[i];
+                ImGui::Text("%s: %02d:%02d:%02d", timer.name, timer.hours, timer.minutes, timer.seconds);
+                char btn_text[64];
+                sprintf_s(btn_text, sizeof(btn_text), "Remove %s", timer.name);
+                if (ImGui::Button(btn_text)){
+                    // remove_timer()
+                }
+            }
 
             ImGui::End();
 
