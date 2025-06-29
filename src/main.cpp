@@ -1,5 +1,3 @@
-//TODO: Delete app
-//TODO: Total time
 //TODO: App icons
 //TODO: App filtering
 #include "../thirdparty/imGui/imgui.h"
@@ -17,6 +15,7 @@
 #include <windows.h>
 #include <winuser.h>
 #include "timer.h"
+#include "Quicksand_SemiBold.h"
 
 // Data
 static ID3D11Device*            g_pd3dDevice = nullptr;
@@ -87,6 +86,18 @@ Timer add_timer(const char *name){
     return timer;
 }
 
+void remove_timer(Timer timers[], int& size, int index) {
+    for (int i = index; i < size - 1; ++i) {
+        timers[i] = timers[i + 1];
+    }
+    timers[size - 1] = Timer{};  // default init
+    --size;
+}
+
+// void remove_timer(Timer timers[], int index){
+//     timers[index] = {0};
+// }
+
 // Main code
 int main(int, char**)
 {
@@ -98,8 +109,8 @@ int main(int, char**)
     float main_scale = ImGui_ImplWin32_GetDpiScaleForMonitor(monitor);
 
     // Define the desired client area size (not including title bar, borders)
-    int clientWidth = (int)(600 * main_scale);
-    int clientHeight = (int)(300 * main_scale);
+    int clientWidth = (int)(300 * main_scale);
+    int clientHeight = (int)(400 * main_scale);
 
     // Compute the full window size required to fit the client area
     RECT rect = { 0, 0, clientWidth, clientHeight };
@@ -146,12 +157,48 @@ int main(int, char**)
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
 
+    ImFont* customFont = io.Fonts->AddFontFromMemoryTTF(
+    _mnt_data_Quicksand_SemiBold_ttf, _mnt_data_Quicksand_SemiBold_ttf_len, 18.0f);
+
     // Setup Dear ImGui style
-    ImGui::StyleColorsDark();
-    //ImGui::StyleColorsLight();
+
+    ImGuiStyle& style = ImGui::GetStyle();
+    ImVec4* colors = style.Colors;
+
+    // Backgrounds - darker warm taupe
+    colors[ImGuiCol_WindowBg]         = ImVec4(0.32f, 0.29f, 0.27f, 1.00f); // Warm taupe
+    colors[ImGuiCol_ChildBg]          = ImVec4(0.30f, 0.27f, 0.25f, 1.00f);
+    colors[ImGuiCol_PopupBg]          = ImVec4(0.28f, 0.25f, 0.23f, 1.00f);
+
+    // Text - warm light cream or tan
+    colors[ImGuiCol_Text]             = ImVec4(0.95f, 0.89f, 0.85f, 1.00f); // Light tan text
+    colors[ImGuiCol_TextDisabled]     = ImVec4(0.60f, 0.56f, 0.52f, 1.00f);
+
+    // Buttons - warm terracotta tones
+    colors[ImGuiCol_Button]           = ImVec4(0.65f, 0.44f, 0.36f, 1.00f); // Muted terracotta
+    colors[ImGuiCol_ButtonHovered]    = ImVec4(0.72f, 0.50f, 0.40f, 1.00f);
+    colors[ImGuiCol_ButtonActive]     = ImVec4(0.60f, 0.39f, 0.32f, 1.00f);
+
+    // Frame BGs
+    colors[ImGuiCol_FrameBg]          = ImVec4(0.38f, 0.34f, 0.31f, 1.00f);
+    colors[ImGuiCol_FrameBgHovered]   = ImVec4(0.42f, 0.38f, 0.35f, 1.00f);
+    colors[ImGuiCol_FrameBgActive]    = ImVec4(0.47f, 0.43f, 0.40f, 1.00f);
+
+    // Button shape
+    style.FrameRounding = 6.0f;
+    style.FrameBorderSize = 1.0f;
+    style.FramePadding = ImVec2(10, 6);
+
+    // Colors
+    // ImVec4 buttonColor         = ImVec4(1.0f, 0.50f, 1.00f, 1.00f);
+    // ImVec4 buttonHoveredColor  = ImVec4(0.35f, 0.60f, 1.00f, 1.00f);
+    // ImVec4 buttonActiveColor   = ImVec4(0.15f, 0.40f, 0.90f, 1.00f);
+
+    // ImGui::GetStyle().Colors[ImGuiCol_Button]        = buttonColor;
+    // ImGui::GetStyle().Colors[ImGuiCol_ButtonHovered] = buttonHoveredColor;
+    // ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]  = buttonActiveColor;
 
     // Setup scaling
-    ImGuiStyle& style = ImGui::GetStyle();
     style.ScaleAllSizes(main_scale);        // Bake a fixed style scale. (until we have a solution for dynamic style scaling, changing this requires resetting Style + calling this again)
 
     // Setup Platform/Renderer backends
@@ -160,24 +207,29 @@ int main(int, char**)
 
 
     //State
-    ImVec4 clear_color = ImVec4(0.20f, 0.20f, 0.18f, 1.00f);
+    ImVec4 clear_color = ImVec4(0.58f, 0.45f, 0.29f, 1.00f);
+    static float v_spacing = 10.0f;
     static bool selection_mode = false;
+    static bool pause_mode = true;
     static HWND main_hwnd = hwnd;
     HWND selected_window;
     static bool waiting_for_click = false;
-    int timers_count = 0;
+    int timers_count = 1;
     int active_timer_id = 0;
     char name[64] = "";
     char is_equal[4] = "Yes";
     char not_equal[3] = "No";
     char focused_window_title[64];
     Timer timers[MAX_TIMERS];
-//     Timer timer = {
-//     .hours = 0,
-//     .minutes = 0,
-//     .seconds = 0,
-//     .paused = false,
-// };
+
+    timers[0].hours = 0;
+    timers[0].minutes = 0;
+    timers[0].seconds = 0;
+    timers[0].paused = true;
+    std::string global_timer_name = "Total time";
+    strncpy_s (timers[0].name, sizeof(timers[0].name), global_timer_name.c_str(), _TRUNCATE);
+
+
     uint64_t last_time = GetTickCount64();
     int elapsed_seconds = 0;
     static uint64_t leftover_ms = 0;
@@ -227,6 +279,109 @@ int main(int, char**)
                 GetWindowTextA(focused_window, focused_window_title, sizeof(focused_window_title));
                 active_timer_id = set_active_timer(focused_window_title, timers, timers_count);
             }
+
+
+            ImGui::SetNextWindowPos(ImVec2(0, 0));
+            ImGui::SetNextWindowSize(io.DisplaySize); // fill entire main viewport
+
+            ImGui::Begin("MainPanel", nullptr,
+                ImGuiWindowFlags_NoMove |
+                ImGuiWindowFlags_NoResize |
+                ImGuiWindowFlags_NoCollapse |
+                ImGuiWindowFlags_NoTitleBar);
+
+            // float fullWidth = ImGui::GetContentRegionAvail().x;
+
+            ImGui::Dummy(ImVec2(0.0f, v_spacing/2));
+
+            if (ImGui::Button("Add app timer", ImVec2(-1 , 0))){
+                selection_mode = true;
+            }
+
+            ImGui::Dummy(ImVec2(0.0f, v_spacing/2));
+
+            if (pause_mode){
+                if (ImGui::Button("Start", ImVec2(-1 , 0))){
+                    pause_mode = false;
+                }
+            }
+            else {
+                if (ImGui::Button("Pause", ImVec2(-1 , 0))){
+                pause_mode = true;
+                }
+            }
+
+            ImGui::Dummy(ImVec2(0.0f, v_spacing));
+
+            timers[0].paused = pause_mode;
+            ImGui::Text("%s:", timers[0].name);
+            ImGui::Text("%02d:%02d:%02d", timers[0].hours, timers[0].minutes, timers[0].seconds);
+
+            ImGui::Dummy(ImVec2(0.0f, v_spacing));
+
+            if (selection_mode){
+                FindAllTopLevelWindows();
+                for (size_t i = 0; i < app_list.size(); ++i) {
+                    WindowInfo win = app_list[i];
+                    if (ImGui::Button(win.title.c_str())){
+                            selected_window = win.hwnd;
+                            strncpy_s (name, sizeof(name), win.title.c_str(), _TRUNCATE);
+                            if ((timers_count + 1) < MAX_TIMERS){
+                                timers[timers_count++] = add_timer(name);
+                            }
+                            selection_mode = false;
+                        }
+                }
+                // selection_mode = false;
+            }
+
+            ImGui::BeginChild("TimerList", ImVec2(0, 0), false);
+
+            for (int i = 1; i < timers_count; i++) {
+                timers[i].paused = pause_mode;
+
+                // Begin a child to encapsulate layout
+                ImGui::BeginGroup();
+
+                float line_height = ImGui::GetTextLineHeight();
+                float spacing = ImGui::GetStyle().ItemSpacing.y;
+
+                // Record current cursor Y position for first line
+                float y_start = ImGui::GetCursorPosY();
+
+                // Draw first line
+                ImGui::Text("%s", timers[i].name);
+
+                // Draw second line
+                ImGui::Text("%02d:%02d:%02d", timers[i].hours, timers[i].minutes, timers[i].seconds);
+
+                ImGui::EndGroup();
+
+                // Move to the right side
+                ImGui::SameLine(ImGui::GetContentRegionAvail().x - 80);
+
+                // Center Y offset between the two lines
+                float total_height = 2 * line_height + spacing;
+                float button_height = ImGui::GetFrameHeight();
+                float y_centered = y_start + (total_height - button_height) / 2.0f;
+
+                // Save current X, move Y to center
+                float x = ImGui::GetCursorPosX();
+                ImGui::SetCursorPosY(y_centered);
+                ImGui::SetCursorPosX(x);
+
+                char btn_text[64];
+                sprintf_s(btn_text, sizeof(btn_text), "Remove##%d", i);
+
+                if (ImGui::Button(btn_text, ImVec2(70, 0))) {
+                    remove_timer(timers, timers_count, i);
+                }
+
+                // Add a bit of spacing before next timer
+                ImGui::Dummy(ImVec2(0, spacing));
+            }
+            ImGui::EndChild();
+
             uint64_t now = GetTickCount64();
             uint64_t delta_ms = now - last_time;
             last_time = now;
@@ -244,53 +399,7 @@ int main(int, char**)
             if (add_seconds > 0){
                 if (strcmp(timers[active_timer_id].name, focused_window_title) == 0){
                     timer_update(&timers[active_timer_id], add_seconds);
-                }
-            }
-
-
-            ImGui::SetNextWindowPos(ImVec2(0, 0));
-            ImGui::SetNextWindowSize(io.DisplaySize); // fill entire main viewport
-
-            ImGui::Begin("MainPanel", nullptr,
-                ImGuiWindowFlags_NoMove |
-                ImGuiWindowFlags_NoResize |
-                ImGuiWindowFlags_NoCollapse |
-                ImGuiWindowFlags_NoTitleBar);
-
-            // ImGui::InputText("Selected name", name, IM_ARRAYSIZE(name));
-            // ImGui::InputText("Focused name", focused_window_title, IM_ARRAYSIZE(focused_window_title));
-            // if (strcmp(focused_window_title, name) == 0){
-            //     ImGui::Text("%s", is_equal);
-            // }
-            // else{
-            //     ImGui::Text("%s", not_equal);
-            // }
-
-            if (ImGui::Button("Add app to track")){
-                selection_mode = true;
-            }
-
-            if (selection_mode){
-                FindAllTopLevelWindows();
-                for (size_t i = 0; i < app_list.size(); ++i) {
-                    WindowInfo win = app_list[i];
-                    if (ImGui::Button(win.title.c_str())){
-                            selected_window = win.hwnd;
-                            strncpy_s (name, sizeof(name), win.title.c_str(), _TRUNCATE);
-                            timers[timers_count++] = add_timer(name);
-                            selection_mode = false;
-                        }
-                }
-                // selection_mode = false;
-            }
-
-            for (int i = 0; i < timers_count; i++){
-                Timer timer = timers[i];
-                ImGui::Text("%s: %02d:%02d:%02d", timer.name, timer.hours, timer.minutes, timer.seconds);
-                char btn_text[64];
-                sprintf_s(btn_text, sizeof(btn_text), "Remove %s", timer.name);
-                if (ImGui::Button(btn_text)){
-                    // remove_timer()
+                    timer_update(&timers[0], add_seconds);
                 }
             }
 
