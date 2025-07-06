@@ -13,9 +13,13 @@
 #include <string.h>
 #include <string>
 #include <windows.h>
+#include <psapi.h>
 #include <winuser.h>
 #include "timer.h"
 #include "Quicksand_SemiBold.h"
+
+#pragma comment(lib, "Psapi.lib")
+#pragma comment(lib, "Version.lib")
 
 // Data
 static ID3D11Device*            g_pd3dDevice = nullptr;
@@ -37,9 +41,53 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 struct WindowInfo {
     HWND hwnd;
     std::string title;
+    DWORD id;
 };
 
 std::vector<WindowInfo> app_list;
+
+std::string GetProductNameFromPID(DWORD processID) {
+    char exePath[MAX_PATH] = { 0 };
+
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processID);
+    if (!hProcess) return "Unknown";
+
+    if (!GetModuleFileNameExA(hProcess, NULL, exePath, MAX_PATH)) {
+        CloseHandle(hProcess);
+        return "Unknown";
+    }
+    CloseHandle(hProcess);
+
+    DWORD handle = 0;
+    DWORD size = GetFileVersionInfoSizeA(exePath, &handle);
+    if (size == 0) return "Unknown";
+
+    std::vector<BYTE> versionData(size);
+    if (!GetFileVersionInfoA(exePath, 0, size, versionData.data()))
+        return "Unknown";
+
+    // Get the language and code page
+    struct LANGANDCODEPAGE {
+        WORD wLanguage;
+        WORD wCodePage;
+    } *lpTranslate;
+
+    UINT cbTranslate = 0;
+    if (!VerQueryValueA(versionData.data(), "\\VarFileInfo\\Translation", (LPVOID*)&lpTranslate, &cbTranslate) || cbTranslate == 0)
+        return "Unknown";
+
+    // Build the path to ProductName
+    char subBlock[128];
+    sprintf_s(subBlock, "\\StringFileInfo\\%04x%04x\\ProductName", lpTranslate[0].wLanguage, lpTranslate[0].wCodePage);
+
+    LPSTR productName = nullptr;
+    UINT sizeProductName = 0;
+    if (VerQueryValueA(versionData.data(), subBlock, (LPVOID*)&productName, &sizeProductName) && productName) {
+        return std::string(productName);
+    }
+
+    return "Unknown";
+}
 
 BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
     if (!IsWindowVisible(hwnd))
@@ -47,9 +95,14 @@ BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
 
     char title[256];
     GetWindowTextA(hwnd, title, sizeof(title));
-
-    if (strlen(title) > 0) {
-        app_list.push_back({ hwnd, title });
+    DWORD process_id;
+    GetWindowThreadProcessId(hwnd, &process_id);
+    std::string appName = GetProductNameFromPID(process_id);
+    if ((appName != "Unknown") && (appName.find("Operating System") == std::string::npos) ){
+        app_list.push_back({ hwnd, appName, process_id });
+    }
+    else if ((strlen(title) > 0) && strcmp(title, "Focus Timer") != 0) {
+        app_list.push_back({ hwnd, title, process_id });
     }
 
     return TRUE;
@@ -62,9 +115,9 @@ void FindAllTopLevelWindows() {
 
 
 
-int set_active_timer(char *name, Timer timers[], int timers_count){
+int set_active_timer(DWORD id, Timer timers[], int timers_count){
     for (int i = 0; i < timers_count; i++){
-        if (strcmp(timers[i].name, name) == 0){
+        if (timers[i].id == id){
             timers[i].paused = false;
             return i;
         }
@@ -75,13 +128,14 @@ int set_active_timer(char *name, Timer timers[], int timers_count){
     return 0;
 }
 
-Timer add_timer(const char *name){
+Timer add_timer(const char *name, DWORD id){
 
     Timer timer = {};
     timer.hours = 0;
     timer.minutes = 0;
     timer.seconds = 0;
     timer.paused = true;
+    timer.id = id;
     strncpy_s (timer.name, sizeof(timer.name), name, _TRUNCATE);
     return timer;
 }
@@ -212,7 +266,8 @@ int main(int, char**)
     static bool selection_mode = false;
     static bool pause_mode = true;
     static HWND main_hwnd = hwnd;
-    HWND selected_window;
+    // HWND selected_window;
+    // DWORD selected_process_id;
     static bool waiting_for_click = false;
     int timers_count = 1;
     int active_timer_id = 0;
@@ -275,9 +330,11 @@ int main(int, char**)
             static float f = 0.0f;
             static int counter = 0;
             HWND focused_window = GetForegroundWindow();
-            if (focused_window != nullptr) {
-                GetWindowTextA(focused_window, focused_window_title, sizeof(focused_window_title));
-                active_timer_id = set_active_timer(focused_window_title, timers, timers_count);
+            DWORD focused_process_id = 0;
+            if (focused_window != nullptr){
+                // GetWindowTextA(focused_window, focused_window_title, sizeof(focused_window_title));
+                GetWindowThreadProcessId(focused_window, &focused_process_id);
+                active_timer_id = set_active_timer(focused_process_id, timers, timers_count);
             }
 
 
@@ -291,98 +348,99 @@ int main(int, char**)
                 ImGuiWindowFlags_NoTitleBar);
 
             // float fullWidth = ImGui::GetContentRegionAvail().x;
+            if (!selection_mode){
+                ImGui::Dummy(ImVec2(0.0f, v_spacing/2));
 
-            ImGui::Dummy(ImVec2(0.0f, v_spacing/2));
-
-            if (ImGui::Button("Add app timer", ImVec2(-1 , 0))){
-                selection_mode = true;
-            }
-
-            ImGui::Dummy(ImVec2(0.0f, v_spacing/2));
-
-            if (pause_mode){
-                if (ImGui::Button("Start", ImVec2(-1 , 0))){
-                    pause_mode = false;
+                if (ImGui::Button("Add app timer", ImVec2(-1 , 0))){
+                    selection_mode = true;
                 }
-            }
-            else {
-                if (ImGui::Button("Pause", ImVec2(-1 , 0))){
-                pause_mode = true;
+
+                ImGui::Dummy(ImVec2(0.0f, v_spacing/2));
+
+                if (pause_mode){
+                    if (ImGui::Button("Start", ImVec2(-1 , 0))){
+                        pause_mode = false;
+                    }
                 }
+                else {
+                    if (ImGui::Button("Pause", ImVec2(-1 , 0))){
+                    pause_mode = true;
+                    }
+                }
+
+                ImGui::Dummy(ImVec2(0.0f, v_spacing));
+
+                timers[0].paused = pause_mode;
+                ImGui::Text("%s:", timers[0].name);
+                ImGui::Text("%02d:%02d:%02d", timers[0].hours, timers[0].minutes, timers[0].seconds);
+
+                ImGui::Dummy(ImVec2(0.0f, v_spacing));
+
+                ImGui::BeginChild("TimerList", ImVec2(0, 0), false);
+
+                for (int i = 1; i < timers_count; i++) {
+                    timers[i].paused = pause_mode;
+
+                    // Begin a child to encapsulate layout
+                    ImGui::BeginGroup();
+
+                    float line_height = ImGui::GetTextLineHeight();
+                    float spacing = ImGui::GetStyle().ItemSpacing.y;
+
+                    // Record current cursor Y position for first line
+                    float y_start = ImGui::GetCursorPosY();
+
+                    // Draw first line
+                    ImGui::Text("%s", timers[i].name);
+
+                    // Draw second line
+                    ImGui::Text("%02d:%02d:%02d", timers[i].hours, timers[i].minutes, timers[i].seconds);
+
+                    ImGui::EndGroup();
+
+                    // Move to the right side
+                    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 80);
+
+                    // Center Y offset between the two lines
+                    float total_height = 2 * line_height + spacing;
+                    float button_height = ImGui::GetFrameHeight();
+                    float y_centered = y_start + (total_height - button_height) / 2.0f;
+
+                    // Save current X, move Y to center
+                    float x = ImGui::GetCursorPosX();
+                    ImGui::SetCursorPosY(y_centered);
+                    ImGui::SetCursorPosX(x);
+
+                    char btn_text[64];
+                    sprintf_s(btn_text, sizeof(btn_text), "Remove##%d", i);
+
+                    if (ImGui::Button(btn_text, ImVec2(70, 0))) {
+                        remove_timer(timers, timers_count, i);
+                    }
+
+                    // Add a bit of spacing before next timer
+                    ImGui::Dummy(ImVec2(0, spacing));
+                }
+                ImGui::EndChild();
+
+
             }
-
-            ImGui::Dummy(ImVec2(0.0f, v_spacing));
-
-            timers[0].paused = pause_mode;
-            ImGui::Text("%s:", timers[0].name);
-            ImGui::Text("%02d:%02d:%02d", timers[0].hours, timers[0].minutes, timers[0].seconds);
-
-            ImGui::Dummy(ImVec2(0.0f, v_spacing));
 
             if (selection_mode){
                 FindAllTopLevelWindows();
                 for (size_t i = 0; i < app_list.size(); ++i) {
                     WindowInfo win = app_list[i];
                     if (ImGui::Button(win.title.c_str())){
-                            selected_window = win.hwnd;
                             strncpy_s (name, sizeof(name), win.title.c_str(), _TRUNCATE);
                             if ((timers_count + 1) < MAX_TIMERS){
-                                timers[timers_count++] = add_timer(name);
+                                timers[timers_count++] = add_timer(name, win.id);
                             }
                             selection_mode = false;
                         }
                 }
                 // selection_mode = false;
             }
-
-            ImGui::BeginChild("TimerList", ImVec2(0, 0), false);
-
-            for (int i = 1; i < timers_count; i++) {
-                timers[i].paused = pause_mode;
-
-                // Begin a child to encapsulate layout
-                ImGui::BeginGroup();
-
-                float line_height = ImGui::GetTextLineHeight();
-                float spacing = ImGui::GetStyle().ItemSpacing.y;
-
-                // Record current cursor Y position for first line
-                float y_start = ImGui::GetCursorPosY();
-
-                // Draw first line
-                ImGui::Text("%s", timers[i].name);
-
-                // Draw second line
-                ImGui::Text("%02d:%02d:%02d", timers[i].hours, timers[i].minutes, timers[i].seconds);
-
-                ImGui::EndGroup();
-
-                // Move to the right side
-                ImGui::SameLine(ImGui::GetContentRegionAvail().x - 80);
-
-                // Center Y offset between the two lines
-                float total_height = 2 * line_height + spacing;
-                float button_height = ImGui::GetFrameHeight();
-                float y_centered = y_start + (total_height - button_height) / 2.0f;
-
-                // Save current X, move Y to center
-                float x = ImGui::GetCursorPosX();
-                ImGui::SetCursorPosY(y_centered);
-                ImGui::SetCursorPosX(x);
-
-                char btn_text[64];
-                sprintf_s(btn_text, sizeof(btn_text), "Remove##%d", i);
-
-                if (ImGui::Button(btn_text, ImVec2(70, 0))) {
-                    remove_timer(timers, timers_count, i);
-                }
-
-                // Add a bit of spacing before next timer
-                ImGui::Dummy(ImVec2(0, spacing));
-            }
-            ImGui::EndChild();
-
-            uint64_t now = GetTickCount64();
+           uint64_t now = GetTickCount64();
             uint64_t delta_ms = now - last_time;
             last_time = now;
 
@@ -397,7 +455,7 @@ int main(int, char**)
 
             }
             if (add_seconds > 0){
-                if (strcmp(timers[active_timer_id].name, focused_window_title) == 0){
+                if (timers[active_timer_id].id == focused_process_id){
                     timer_update(&timers[active_timer_id], add_seconds);
                     timer_update(&timers[0], add_seconds);
                 }

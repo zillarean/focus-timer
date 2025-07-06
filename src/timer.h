@@ -13,6 +13,7 @@ typedef struct {
     int minutes;
     int seconds;
     bool paused;
+    unsigned long id;
 } Timer;
 
 void timer_update(Timer *timer, int elapsed_seconds);
